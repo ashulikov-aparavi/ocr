@@ -1,0 +1,9 @@
+easy_ocr\Reader.class
+easy_ocr\App.class
+easy_ocr\Prediction.class
+easy_ocr\RecognizerTranslator.class
+easy_ocr\BBox.class
+easy_ocr\Recognizer.class
+easy_ocr\Detector.class
+easy_ocr\DetectorTranslator.class
+easy_ocr\RecognizerInput.class
