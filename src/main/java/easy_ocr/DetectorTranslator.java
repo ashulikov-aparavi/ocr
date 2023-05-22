@@ -203,7 +203,7 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
         if (max < localMax) {
             scale = max * 1.0f / localMax;
         }
-        // paddle model only take 32-based size
+        // CRAFT model only take 32-based size
         return resize32(h * scale, w * scale);
     }
 

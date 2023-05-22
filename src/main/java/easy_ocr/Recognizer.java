@@ -90,33 +90,19 @@ public class Recognizer {
 		Image res = null;
 	    if (ratio<1.0) {
 	        ratio = 1.0 / ratio;
-	        Imgproc.resize(img, new_img, new Size(model_height,(int)(model_height*ratio)), 0, 0, Imgproc.INTER_AREA);
-	        NDManager manager = NDManager.newBaseManager();
-	        NDArray full = manager.create(new Shape(3, model_height,(int)(model_height*ratio)));
-			for (int i = 0; i < new_img.height(); i++) {
-				for (int j = 0; j < new_img.width(); j++) {
-					double[] pixel = new_img.get(i, j);
-					full.setScalar(new NDIndex(0, i, j), (float) (pixel[0]));
-					full.setScalar(new NDIndex(1, i, j), (float) (pixel[1]));
-					full.setScalar(new NDIndex(2, i, j), (float) (pixel[2]));
-				}
-			}
-			res = ImageFactory.getInstance().fromNDArray(full);
 	    }
-	    else {
-	    	Imgproc.resize(img, new_img, new Size((int)(model_height*ratio),model_height), 0, 0, Imgproc.INTER_AREA);
-	    	NDManager manager = NDManager.newBaseManager();
-	        NDArray full = manager.create(new Shape(3, model_height,(int)(model_height*ratio)));
-			for (int i = 0; i < new_img.height(); i++) {
-				for (int j = 0; j < new_img.width(); j++) {
-					double[] pixel = new_img.get(i, j);
-					full.setScalar(new NDIndex(0, i, j), (float) (pixel[0]));
-					full.setScalar(new NDIndex(1, i, j), (float) (pixel[1]));
-					full.setScalar(new NDIndex(2, i, j), (float) (pixel[2]));
-				}
+        Imgproc.resize(img, new_img, new Size((int)(model_height*ratio), model_height), 0, 0, Imgproc.INTER_AREA);
+        NDManager manager = NDManager.newBaseManager();
+        NDArray full = manager.create(new Shape(3, model_height,(int)(model_height*ratio)));
+		for (int i = 0; i < new_img.height(); i++) {
+			for (int j = 0; j < new_img.width(); j++) {
+				double[] pixel = new_img.get(i, j);
+				full.setScalar(new NDIndex(0, i, j), (float) (pixel[0]));
+				full.setScalar(new NDIndex(1, i, j), (float) (pixel[1]));
+				full.setScalar(new NDIndex(2, i, j), (float) (pixel[2]));
 			}
-			res = ImageFactory.getInstance().fromNDArray(full);
-	    }
+		}
+		res = ImageFactory.getInstance().fromNDArray(full);
 	    
 	    return res;
 	}

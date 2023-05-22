@@ -27,8 +27,6 @@ public class RecognizerTranslator implements NoBatchifyTranslator<Image, String>
     public String processOutput(TranslatorContext ctx, NDList list) {
         NDArray prediction = list.singletonOrThrow();
         int length = (int) prediction.size(1);
-
-		System.out.println("Current image path: " + length);
         prediction = prediction.softmax(2);
         NDArray predNorm = prediction.sum(new int[] {2});
         prediction = prediction.div(predNorm.expandDims(-1));
