@@ -156,13 +156,14 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
 				double tp = BBOX_TOP_VAL_THRESHOLD;
 				double btm = BBOX_BOTTOM_VAL_THRESHOLD;
 
-				for (int i = 0; i < contour.width(); ++i) {
+				for (int i = 0; i < contour.height(); ++i) {
 					lft = Math.min(lft, contour.get(i, 0)[0]);
 					rgt = Math.max(rgt, contour.get(i, 0)[0]);
 					tp = Math.min(tp, contour.get(i, 0)[1]);
 					btm = Math.max(btm, contour.get(i, 0)[1]);
 				}
 				bbox = new BBox(lft * net_scale / scale, rgt * net_scale / scale, tp * net_scale / scale, btm * net_scale / scale);
+				
 			} else {
 				bbox = new BBox(box, net_scale / scale);
 			}
