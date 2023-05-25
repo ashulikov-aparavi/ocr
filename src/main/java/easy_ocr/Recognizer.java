@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 
+import org.apache.commons.math3.stat.descriptive.rank.Percentile;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
@@ -27,6 +28,7 @@ import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.index.NDIndex;
 import ai.djl.ndarray.types.Shape;
+import ai.djl.opencv.OpenCVImageFactory;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
@@ -34,7 +36,7 @@ import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.TranslateException;
 
 public class Recognizer {
-	Predictor<Image, String> predictor;
+	Predictor<RecognizerInput, RecognizerOutput> predictor;
 	String currentModel;
 	private static final float slope_ths = 0.1f;
 	private static final float ycenter_ths = 0.5f;
@@ -43,8 +45,7 @@ public class Recognizer {
 	private static final float add_margin = 0.1f;
 	
 	private static final int MODEL_HEIGHT = 64;
-	private static final int TARGET_WIDTH = 200;
-	private static final double RGB_MAX_PIXEL_VAL = 255.0;
+	private static final int MIN_SIZE = 15;
 	
 	private static final HashMap<String, String> charSet = new HashMap<>();
 	private static final String modelPath = "models/";
@@ -57,14 +58,14 @@ public class Recognizer {
     	currentModel = modelType;
     	ConcurrentHashMap <String, String> translatorInput = new ConcurrentHashMap <String, String>();
     	translatorInput.put("charSet", supportedChars());
-    	Criteria<Image, String> criteria = Criteria.builder()
-				.setTypes(Image.class, String.class)
+    	Criteria<RecognizerInput, RecognizerOutput> criteria = Criteria.builder()
+				.setTypes(RecognizerInput.class, RecognizerOutput.class)
 		        .optModelPath(Paths.get(modelPath + modelType))
 		        .optTranslator(new RecognizerTranslator(translatorInput))
 		        .optProgress(new ProgressBar()).build();
 
 		try {
-			ZooModel<Image, String> model = criteria.loadModel();
+			ZooModel<RecognizerInput, RecognizerOutput> model = criteria.loadModel();
 			this.predictor = model.newPredictor();
 		} catch (ModelNotFoundException | MalformedModelException |IOException e) {
 			e.printStackTrace();
@@ -75,7 +76,7 @@ public class Recognizer {
 		this("latin_gen2");
 	}
 	
-	public Predictor<Image, String> getDetectorPredictor() {
+	public Predictor<RecognizerInput, RecognizerOutput> getDetectorPredictor() {
 		return this.predictor;
 	}
 
@@ -91,7 +92,7 @@ public class Recognizer {
 	    if (ratio<1.0) {
 	        ratio = 1.0 / ratio;
 	    }
-        Imgproc.resize(img, new_img, new Size((int)(model_height*ratio), model_height), 0, 0, Imgproc.INTER_AREA);
+        Imgproc.resize(img, new_img, new Size((int)(model_height*ratio), model_height), 0, 0, Imgproc.INTER_LANCZOS4);
         NDManager manager = NDManager.newBaseManager();
         NDArray full = manager.create(new Shape(3, model_height,(int)(model_height*ratio)));
 		for (int i = 0; i < new_img.height(); i++) {
@@ -140,7 +141,7 @@ public class Recognizer {
 		mRectF.convertTo(mRectF, CvType.CV_32F);
 		M = Imgproc.getPerspectiveTransform(mRectF, mPointsF);
 		Mat crop = new Mat();
-		Imgproc.warpPerspective(image, crop, M, new Size(maxWidth - 1, maxHeight - 1));
+		Imgproc.warpPerspective(image, crop, M, new Size(maxWidth, maxHeight));
 
 	    return crop;
 	}
@@ -193,13 +194,14 @@ public class Recognizer {
     	    combined_list.add(new_box);
         }
         
-        
 	    // merge list use sort again
         for (int i = 0; i < combined_list.size(); ++i) {
 	        if (combined_list.get(i).size() == 1) { // one box per line
 	        	double[] box = combined_list.get(i).get(0);
 	            int margin = (int)(add_margin*Math.min(box[1]-box[0],box[5]));
-	            free_list.add(new BBox(box[0]-margin, box[1]+margin, box[2]-margin, box[3]+margin).points);
+	            if (Math.max(box[1]+margin-box[0]+margin, box[3]+margin-box[2]+margin) > MIN_SIZE) {
+	            	free_list.add(new BBox(box[0]-margin, box[1]+margin, box[2]-margin, box[3]+margin).points);
+	            }
 	        }
 	        else { // multiple boxes per line
 	        	ArrayList<double[]> boxes = combined_list.get(i);
@@ -232,26 +234,29 @@ public class Recognizer {
 	                	x_max = 0;
 	                	for (int k = 0; k < merged_box.get(j).size(); ++k) {
 	                		x_min = Math.min(x_min, merged_box.get(j).get(k)[0]);
-	                		x_max = Math.min(x_min, merged_box.get(j).get(k)[1]);
-	                		y_min = Math.min(x_min, merged_box.get(j).get(k)[2]);
-	                		y_max = Math.min(x_min, merged_box.get(j).get(k)[3]);
+	                		x_max = Math.max(x_max, merged_box.get(j).get(k)[1]);
+	                		y_min = Math.min(y_min, merged_box.get(j).get(k)[2]);
+	                		y_max = Math.max(y_max, merged_box.get(j).get(k)[3]);
 	                	}
 
 	                    double box_width = x_max - x_min;
 	                    double box_height = y_max - y_min;
 	                    double margin = (int)(add_margin * (Math.min(box_width, box_height)));
-
-	                    free_list.add(new BBox(x_min-margin, x_max+margin, y_min-margin, y_max+margin).points);
+	                    if (Math.max(box_width + 2*margin, box_height + 2*margin) > MIN_SIZE) {
+	                    	free_list.add(new BBox(x_min-margin, x_max+margin, y_min-margin, y_max+margin).points);
+	                    }
 	                }
 	                else{ // non adjacent box in same line
 	                    double box_width = merged_box.get(j).get(0)[1] - merged_box.get(j).get(0)[0];
 	                    double box_height = merged_box.get(j).get(0)[3] - merged_box.get(j).get(0)[2];
 	                    double margin = (int)(add_margin * (Math.min(box_width, box_height)));
-
-	                    free_list.add(new BBox(merged_box.get(j).get(0)[0]-margin,
-	                    		               merged_box.get(j).get(0)[1]+margin,
-	                    		               merged_box.get(j).get(0)[2]-margin,
-	                    		               merged_box.get(j).get(0)[3]+margin).points);
+	                    
+	                    if (Math.max(box_width + 2*margin, box_height + 2*margin) > MIN_SIZE) {
+		                    free_list.add(new BBox(merged_box.get(j).get(0)[0]-margin,
+		                    		               merged_box.get(j).get(0)[1]+margin,
+		                    		               merged_box.get(j).get(0)[2]-margin,
+		                    		               merged_box.get(j).get(0)[3]+margin).points);
+	                    }
 	                }
 	            }
 	        }
@@ -261,6 +266,8 @@ public class Recognizer {
 	    for(int i = 0; i < free_list.size(); ++i) {
 	    	List<Point> box = free_list.get(i);
 	        Mat transformed_img = four_point_transform(image, box);
+	        //HighGui.imshow("image", transformed_img);
+	        //HighGui.waitKey();
 	        double ratio;
 	        if (transformed_img.width()<transformed_img.height()) {
 	        	ratio = transformed_img.height()/1.0/transformed_img.width();
@@ -292,8 +299,19 @@ public class Recognizer {
 		Prediction[] recognitions = new Prediction[image_list.size()];
 		for (int i = 0; i < image_list.size(); ++i) {
 			try {
-				recognitions[i] = new Prediction(image_list.get(i).bbox);
-				recognitions[i].word = predictor.predict(image_list.get(i).image);
+				RecognizerInput inp = image_list.get(i);
+				recognitions[i] = new Prediction(inp.bbox);
+				RecognizerOutput output = predictor.predict(inp);
+				//System.out.println("Current score: " + output.score);
+				if (output.score > 0.3) {
+					recognitions[i].word = output.ans;
+				}
+				else {
+					inp.contrast = true;
+					RecognizerOutput new_output = predictor.predict(inp);
+					//System.out.println("Score after contrast: " + output.score);
+					recognitions[i].word = new_output.ans;
+				}
 			} catch (TranslateException e) {
 				e.printStackTrace();
 			}

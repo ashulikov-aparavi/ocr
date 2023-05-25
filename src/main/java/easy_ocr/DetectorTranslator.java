@@ -3,6 +3,8 @@ package easy_ocr;
 import ai.djl.modality.cv.*;
 import ai.djl.modality.cv.util.NDImageUtils;
 import ai.djl.ndarray.*;
+import ai.djl.ndarray.index.NDIndex;
+import ai.djl.ndarray.types.Shape;
 import ai.djl.translate.*;
 
 import java.util.ArrayList;
@@ -15,6 +17,7 @@ import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Size;
+import org.opencv.highgui.HighGui;
 import org.opencv.imgproc.Imgproc;
 import org.tensorflow.ndarray.FloatNdArray;
 
@@ -45,13 +48,14 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
      * @param arguments the arguments for the translator
      */
     public DetectorTranslator(Map<String, ?> arguments) {
-        maxLength = ArgumentsUtil.intValue(arguments, "maxLength", 960);
+        maxLength = ArgumentsUtil.intValue(arguments, "maxLength", 1500);
     }
 
     /** {@inheritDoc} */
     @Override
     public BBox[] processOutput(TranslatorContext ctx, NDList list) {
         NDArray prediction = list.get(0);
+
         Mat regionMap = new Mat(height, width, CvType.CV_32FC1);
 		Mat affinityMap = new Mat(height, width, CvType.CV_32FC1);
 		for (int i = 0; i < height; ++i) {
@@ -78,9 +82,18 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
 		Imgproc.threshold(score, score, PIXEL_SCORE_THRESHOLD, MAXVAL_THRESHOLD_TYPE, Imgproc.THRESH_BINARY);
 		score.convertTo(score, CvType.CV_8UC1);
 
-		Mat labels = new Mat(height, width, CvType.CV_32S), stats = new Mat(), centroids = new Mat();
-        int nComponents = Imgproc.connectedComponentsWithStats(score, labels, stats, centroids);
+		Mat labels_s = new Mat(height, width, CvType.CV_32S), stats = new Mat(), centroids = new Mat();
+		Mat labels = new Mat(height, width, CvType.CV_32F);
+        int nComponents = Imgproc.connectedComponentsWithStats(score, labels_s, stats, centroids);
+        labels_s.convertTo(labels, CvType.CV_32F);
         ArrayList<BBox> boxes = new ArrayList<>();
+		double[] arr = new double[nComponents];
+        
+        for (int i = 0; i < height; ++i) {
+			for (int j = 0; j < width; ++j) {
+				arr[(int) labels.get(i, j)[0]] = Math.max(regionMap.get(i, j)[0], arr[(int) labels.get(i, j)[0]]);
+			}
+		}
         
         for (int componentId = 1; componentId < nComponents; ++componentId) {
         	// If the detected component is really small we are just skipping it
@@ -88,34 +101,15 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
             
             if (size < SIZE_THRESHOLD) 
             	continue;
-            
-            // There we are trying to see if the maximum score in a component is big enough to
-            // think that we are dealing with a text
-            double mx = 0.0;
-            for (int i = 0; i < height; ++i) {
-                for (int j = 0; j < width; ++j) {
-                	if (labels.get(i, j)[0] == componentId) {
-                		mx = Math.max(regionMap.get(i, j)[0], mx);
-                	}
-                }
-            }
 
-            if (mx < DETECTION_THRESHOLD)
+            if (arr[componentId] < DETECTION_THRESHOLD)
 				continue;
             
             // We are trying to create a boundary for the letter, so we are putting 255 only to the points
             // where one of the scores is 0 which still in the component
 			Mat segmap = new Mat(height, width, CvType.CV_32FC1);
-			for (int i = 0; i < height; ++i) {
-				for (int j = 0; j < width; ++j) {
-					if ((labels.get(i, j)[0] == componentId)
-							&& (regionScore.get(i, j)[0] * affinityScore.get(i, j)[0] == 0)) {
-						segmap.put(i, j, 255);
-					} else {
-						segmap.put(i, j, 0);
-					}
-				}
-			}
+			Imgproc.threshold(labels, segmap, componentId, 255, Imgproc.THRESH_TOZERO_INV);
+			Imgproc.threshold(segmap, segmap, componentId - 1, 255, Imgproc.THRESH_BINARY);
             
 			// Dilating a potential boundary so we will get better contour
 			int w = (int) stats.get(componentId, Imgproc.CC_STAT_WIDTH)[0];
@@ -182,16 +176,26 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
     /** {@inheritDoc} */
     @Override
     public NDList processInput(TranslatorContext ctx, Image input) {
-        NDArray img = input.toNDArray(ctx.getNDManager());
+    	NDManager manager = ctx.getNDManager();
+        NDArray img = input.toNDArray(manager);
         height = input.getHeight();
         width = input.getWidth();
+        // CRAFT model only take 32-based size
         int[] hw = scale(height, width, maxLength);
 		System.out.println("Current scaling: " + scale);
-
+        img = NDImageUtils.resize(img, hw[1], hw[0]);
+        int[] hw32 = resize32(height * scale, width * scale);
+        NDArray img32 = manager.zeros(new Shape(hw32[0], hw32[1], 3));
+		for (int i = 0; i < hw[0]; ++i) {
+			for (int j = 0; j < hw[1]; ++j) {
+				img32.set(new NDIndex(i, j, 0), img.getFloat(i, j, 0));
+				img32.set(new NDIndex(i, j, 1), img.getFloat(i, j, 1));
+				img32.set(new NDIndex(i, j, 2), img.getFloat(i, j, 2));
+			}
+		}
         height = hw[0] / net_scale;
         width = hw[1] / net_scale;
-        img = NDImageUtils.resize(img, hw[1], hw[0]);
-        img = NDImageUtils.toTensor(img);
+        img = NDImageUtils.toTensor(img32);
         img = NDImageUtils.normalize(img, MEANS, VARIANCES);
         img = img.expandDims(0);
         return new NDList(img);
@@ -203,8 +207,7 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
         if (max < localMax) {
             scale = max * 1.0f / localMax;
         }
-        // CRAFT model only take 32-based size
-        return resize32(h * scale, w * scale);
+        return new int[] {(int)(h * scale), (int)(w * scale)};
     }
 
     private int[] resize32(double h, double w) {
@@ -213,8 +216,8 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
             h = 32.0 / min * h;
             w = 32.0 / min * w;
         }
-        int h32 = (int) h / 32;
-        int w32 = (int) w / 32;
+        int h32 = (int) (h + 31) / 32 ;
+        int w32 = (int) (w + 31) / 32;
         return new int[] {h32 * 32, w32 * 32};
     }
     

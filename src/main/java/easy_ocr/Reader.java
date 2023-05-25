@@ -185,6 +185,7 @@ public class Reader {
 
 	public Prediction[] recognize(Mat inputImage, String image_path) {
 		System.out.println("Current image path: " + image_path);
+		//Imgproc.cvtColor(inputImage, inputImage, Imgproc.COLOR_RGB2GRAY); 
 	    BBox[] bboxes = boundingBoxDetector.detectBBoxes(image_path);
 		Prediction[] ans = recognizerInstance.recognizeFromBBoxes(inputImage, bboxes);
 		double part_h = inputImage.height() / MAXIMUM_NUMBER_OF_LINES; // This constant is the height each line should have
