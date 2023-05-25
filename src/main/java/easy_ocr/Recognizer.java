@@ -303,7 +303,7 @@ public class Recognizer {
 				recognitions[i] = new Prediction(inp.bbox);
 				RecognizerOutput output = predictor.predict(inp);
 				//System.out.println("Current score: " + output.score);
-				if (output.score > 0.3) {
+				if (output.score > 0.1) {
 					recognitions[i].word = output.ans;
 				}
 				else {
