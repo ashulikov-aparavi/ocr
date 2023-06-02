@@ -25,6 +25,7 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
 	private int width;
 	private int height;
 	private String charSet;
+	private static final float val_diff = 0.03f;
 
     /**
      * Creates the {@link DetectorTranslator} instance.
@@ -43,9 +44,12 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         prediction = prediction.softmax(2);
         NDArray predNorm = prediction.sum(new int[] {2});
         prediction = prediction.div(predNorm.expandDims(-1));
-        NDArray prediction_numbers = prediction.get(new NDIndex(":, 17:26"));
-        NDArray prediction_letters = prediction.get(new NDIndex(":, 34:"));
+        NDArray prediction_numbers = prediction.get(new NDIndex(":, :, 17:26"));
+        NDArray prediction_letters = prediction.get(new NDIndex(":, :, 34:"));
+        NDArray values = prediction.max(new int[]{2});
         NDArray preds_index = prediction.argMax(2);
+        NDArray number_values = prediction_numbers.max(new int[]{2});
+        NDArray letter_values = prediction_letters.max(new int[]{2});
         NDArray number_index = prediction_numbers.argMax(2);
         NDArray letter_index = prediction_letters.argMax(2);
         String text = "";
@@ -60,12 +64,13 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         	long cur = preds_index.getLong(0, i);
         	if ((cur != 0) && (cur != preds_index.getLong(0, i-1))) {
             	char curChar = charSet.charAt((int)preds_index.getLong(0, i)-1);
+            	double curVal = values.getFloat(0, i);
             	if (number ^ (s.indexOf(curChar) > -1)) {
-            		if (number) {
-            			curChar = charSet.charAt((int)number_index.getLong(0, i)-1);
+            		if (number && (curVal - number_values.getFloat(0, i) < val_diff)) {
+            			curChar = charSet.charAt((int)number_index.getLong(0, i));
             		}
-            		else {
-            			curChar = charSet.charAt((int)letter_index.getLong(0, i)-1);
+            		if (!number && (curVal - letter_values.getFloat(0, i) < val_diff)) {
+            			curChar = charSet.charAt((int)letter_index.getLong(0, i));
             		}
             	}
             	text += curChar;
@@ -73,7 +78,6 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         	}
         }
         text = postprocessText(text);
-        NDArray values = prediction.max(new int[]{2});
         NDArray indices = prediction.argMax(2);
         int cnt = 0;
         double prod = 1.0;
