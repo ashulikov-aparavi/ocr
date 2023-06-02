@@ -50,6 +50,10 @@ public class Reader {
 		this.boundingBoxDetector = new Detector();
 	}
 
+	public void initRecognizer(String recognizerType) {
+		this.recognizerInstance = new Recognizer(recognizerType);
+	}
+	
 	public void initRecognizer() {
 		this.recognizerInstance = new Recognizer();
 	}

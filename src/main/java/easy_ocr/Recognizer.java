@@ -45,7 +45,7 @@ public class Recognizer {
 	private static final float add_margin = 0.1f;
 	
 	private static final int MODEL_HEIGHT = 64;
-	private static final int MIN_SIZE = 15;
+	private static final int MIN_SIZE = 10;
 	
 	private static final HashMap<String, String> charSet = new HashMap<>();
 	private static final String modelPath = "models/";
@@ -310,7 +310,14 @@ public class Recognizer {
 					inp.contrast = true;
 					RecognizerOutput new_output = predictor.predict(inp);
 					//System.out.println("Score after contrast: " + output.score);
-					recognitions[i].word = new_output.ans;
+					if (new_output.score > 0.1) {
+						recognitions[i].word = new_output.ans;
+					}
+					else {
+						inp.preprocessing = true;
+						RecognizerOutput last_output = predictor.predict(inp);
+						recognitions[i].word = last_output.ans;
+					}
 				}
 			} catch (TranslateException e) {
 				e.printStackTrace();

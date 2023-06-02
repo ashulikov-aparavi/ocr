@@ -1,25 +1,29 @@
 package easy_ocr;
 
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.Map;
 
 import org.apache.commons.math3.stat.descriptive.rank.Percentile;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 
 import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.util.NDImageUtils;
 import ai.djl.ndarray.*;
+import ai.djl.ndarray.index.NDIndex;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
-import ai.djl.opencv.OpenCVImageFactory;
 import ai.djl.translate.*;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInput, RecognizerOutput>{
 	private int width;
+	private int height;
 	private String charSet;
 
     /**
@@ -39,17 +43,36 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         prediction = prediction.softmax(2);
         NDArray predNorm = prediction.sum(new int[] {2});
         prediction = prediction.div(predNorm.expandDims(-1));
+        NDArray prediction_numbers = prediction.get(new NDIndex(":, 17:26"));
+        NDArray prediction_letters = prediction.get(new NDIndex(":, 34:"));
         NDArray preds_index = prediction.argMax(2);
+        NDArray number_index = prediction_numbers.argMax(2);
+        NDArray letter_index = prediction_letters.argMax(2);
         String text = "";
+        String s = "0123456789";
+        Boolean number = false;
         if (preds_index.getLong(0, 0) != 0) {
-    		text += charSet.charAt((int)preds_index.getLong(0, 0)-1);
+        	char curChar = charSet.charAt((int)preds_index.getLong(0, 0)-1);
+        	text += curChar;
+        	number = s.indexOf(curChar) > -1;
     	}
         for (int i = 1; i < length; ++i) {
         	long cur = preds_index.getLong(0, i);
         	if ((cur != 0) && (cur != preds_index.getLong(0, i-1))) {
-        		text += charSet.charAt((int)preds_index.getLong(0, i)-1);
+            	char curChar = charSet.charAt((int)preds_index.getLong(0, i)-1);
+            	if (number ^ (s.indexOf(curChar) > -1)) {
+            		if (number) {
+            			curChar = charSet.charAt((int)number_index.getLong(0, i)-1);
+            		}
+            		else {
+            			curChar = charSet.charAt((int)letter_index.getLong(0, i)-1);
+            		}
+            	}
+            	text += curChar;
+            	number = s.indexOf(curChar) > -1;
         	}
         }
+        text = postprocessText(text);
         NDArray values = prediction.max(new int[]{2});
         NDArray indices = prediction.argMax(2);
         int cnt = 0;
@@ -65,6 +88,142 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         }
         return new RecognizerOutput(0, text);
     }
+    
+    public static String postprocessText(String inputString) {
+    	String withDates = listPotentialDates(inputString);
+    	String withEmails = listPotentialEmails(withDates);
+    	String withIBANS = listPotentialIBANS(withEmails);
+        return withIBANS;
+    }
+    
+    public static String listPotentialIBANS(String inputLine) {
+        String regex = "IBAN.+";
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(inputLine);
+        while (matcher.find()) {
+            String iban = matcher.group();
+            inputLine = inputLine.replace(iban, refineIBAN(iban));
+        }
+        return inputLine;
+    }
+    
+    public static String refineIBAN(String ibanStr) {
+    	ibanStr = ibanStr.replaceAll("[,\\s\\\\/]", "");
+
+        // Regex pattern to match potential email addresses
+        Pattern pattern = Pattern.compile("IBAN[:|](\\S+)");
+
+        // Matcher to find and replace the patterns
+        Matcher matcher = pattern.matcher(ibanStr);
+
+        // StringBuilder to store the processed string
+        StringBuilder outputDate = new StringBuilder();
+
+        // Iterate over the matches and replace them with the valid email addresses
+        while (matcher.find()) {
+            String ibanNumber = matcher.group(1);
+            // Check if the domain ends with a period
+            // Build the email address with or without the period based on the condition
+            matcher.appendReplacement(outputDate, ibanNumber.toUpperCase());
+        }
+        matcher.appendTail(outputDate);
+        String processedString = outputDate.toString();
+        return processedString;
+    }
+    
+    public static String listPotentialDates(String inputLine) {
+        String regex = "\\w+\\s*[/|-|.]\\s*\\w+\\s*[/|-|.]\\s*\\w+";
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(inputLine);
+        while (matcher.find()) {
+            String date = matcher.group();
+            inputLine = inputLine.replace(date, refineDate(date));
+        }
+        return inputLine;
+    }
+    
+    public static String refineDate(String dateStr) {
+    	dateStr = dateStr.replaceAll("[,\\s\\]", "");
+
+        // Regex pattern to match potential email addresses
+        Pattern pattern = Pattern.compile("(\\d{1,4})(/|-|.)(\\d{1,4})(/|-|.)(\\d{1,4})");
+
+        // Matcher to find and replace the patterns
+        Matcher matcher = pattern.matcher(dateStr);
+
+        // StringBuilder to store the processed string
+        StringBuilder outputDate = new StringBuilder();
+
+        // Iterate over the matches and replace them with the valid email addresses
+        while (matcher.find()) {
+            String day = matcher.group(1);
+            String separator = matcher.group(2);
+            String month = matcher.group(3);
+            String year = matcher.group(5);
+            // Check if the domain ends with a period
+            // Build the email address with or without the period based on the condition
+            String date = day + separator + month + separator + year;
+
+            matcher.appendReplacement(outputDate, date);
+        }
+        matcher.appendTail(outputDate);
+        String processedString = outputDate.toString();
+        return processedString;
+    }
+    
+
+    /**
+     * Check for potential email information
+     * in the input string
+     * 
+     * @return
+     */
+    public static String listPotentialEmails(String inputLine) {
+        String emailPattern = "\\S+@.*?(com|de|net|org|eu|gov|info)";
+        Matcher emailMatcher = Pattern.compile(emailPattern).matcher(inputLine);
+
+        while (emailMatcher.find()) {
+            String email = emailMatcher.group();
+            inputLine = inputLine.replace(email, refineEmail(email));
+        }
+
+        return inputLine;
+    }
+    
+    public static String refineEmail(String emailStr) {
+        emailStr = emailStr.replaceAll("[,\\s\\\\/]", "");
+
+        // Regex pattern to match potential email addresses
+        Pattern pattern = Pattern.compile("(\\S+)@(\\S+)(com|de|net|org|eu|gov|info)");
+
+        // Matcher to find and replace the patterns
+        Matcher matcher = pattern.matcher(emailStr);
+
+        // StringBuilder to store the processed string
+        StringBuilder outputEmail = new StringBuilder();
+
+        // Iterate over the matches and replace them with the valid email addresses
+        while (matcher.find()) {
+            String username = matcher.group(1);
+            String domain = matcher.group(2);
+            String extension = matcher.group(3);
+            // Check if the domain ends with a period
+            boolean hasPeriod = domain.endsWith(".");
+            // Build the email address with or without the period based on the condition
+            String emailAddress;
+            if (hasPeriod) {
+                emailAddress = username + "@" + domain + extension;
+            } else {
+                emailAddress = username + "@" + domain + "." + extension;
+            }
+
+            matcher.appendReplacement(outputEmail, emailAddress);
+        }
+        matcher.appendTail(outputEmail);
+        String processedString = outputEmail.toString();
+        return processedString;
+
+    }
 
     /** {@inheritDoc} */
     @Override
@@ -72,15 +231,38 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
     	NDManager manager = ctx.getNDManager();
         NDArray img = input.image.toNDArray(manager, Image.Flag.GRAYSCALE);
         img = img.toType(DataType.INT32, true);
+        width = input.image.getWidth();
+        height = input.image.getHeight();
         if (input.contrast) {
         	img = contrastAdd(img);
         }
-        width = input.image.getWidth();
+        if (input.preprocessing) {
+        	img = preprocess(img);
+        }
         NDArray out = manager.zeros(new Shape(1, (int)(width/10.0 + 1)));
         img = NDImageUtils.toTensor(img);
         img = img.expandDims(0);
         return new NDList(img, out);
     }
+    
+    private NDArray preprocess(NDArray image) {
+        double[] img = Arrays.stream(image.toIntArray()).asDoubleStream().toArray();
+        Mat matImg = new Mat(height, width, CvType.CV_8UC1);
+        for (int i=0; i<height; i++) {
+            for(int j=0; j<width; j++) {
+            	matImg.put(i, j, img[i*width + j]);
+            }
+        }
+        Imgproc.equalizeHist(matImg, matImg);
+        Imgproc.GaussianBlur(matImg, matImg, new Size(5, 5), 0);
+        Imgproc.threshold(matImg, matImg, 0, 255, Imgproc.THRESH_OTSU);
+        for (int i=0; i<height; i++) {
+            for(int j=0; j<width; j++) {
+            	image.set(new NDIndex(i, j), matImg.get(i, j)[0]);
+            }
+        }
+        return image;
+	}
     
     private NDArray contrastAdd(NDArray image) {
         double[] img = Arrays.stream(image.toIntArray()).asDoubleStream().toArray();
