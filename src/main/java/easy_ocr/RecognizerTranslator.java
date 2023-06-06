@@ -147,7 +147,7 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
     }
     
     public static String refineDate(String dateStr) {
-    	dateStr = dateStr.replaceAll("[,\\s\\]", "");
+    	dateStr = dateStr.replaceAll("[,\\s]", "");
 
         // Regex pattern to match potential email addresses
         Pattern pattern = Pattern.compile("(\\d{1,4})(/|-|.)(\\d{1,4})(/|-|.)(\\d{1,4})");
@@ -240,6 +240,7 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         if (input.contrast) {
         	img = contrastAdd(img);
         }
+        img = img.toType(DataType.INT32, true);
         if (input.preprocessing) {
         	img = preprocess(img);
         }
@@ -250,11 +251,10 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
     }
     
     private NDArray preprocess(NDArray image) {
-        double[] img = Arrays.stream(image.toIntArray()).asDoubleStream().toArray();
         Mat matImg = new Mat(height, width, CvType.CV_8UC1);
         for (int i=0; i<height; i++) {
             for(int j=0; j<width; j++) {
-            	matImg.put(i, j, img[i*width + j]);
+            	matImg.put(i, j, image.getInt(i, j, 0));
             }
         }
         Imgproc.equalizeHist(matImg, matImg);
