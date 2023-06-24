@@ -136,7 +136,7 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
     }
     
     public static String listPotentialDates(String inputLine) {
-        String regex = "\\w+\\s*[/|-|.]\\s*\\w+\\s*[/|-|.]\\s*\\w+";
+        String regex = "\\S+\\s*[/|-|.|,]\\s*\\S+\\s*[/|-|.|,]\\s*\\S+";
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(inputLine);
         while (matcher.find()) {
@@ -150,7 +150,7 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
     	dateStr = dateStr.replaceAll("[,\\s]", "");
 
         // Regex pattern to match potential email addresses
-        Pattern pattern = Pattern.compile("(\\d{1,4})(/|-|.)(\\d{1,4})(/|-|.)(\\d{1,4})");
+        Pattern pattern = Pattern.compile("(\\d{1,4})(/|-|.|,)(\\d{1,4})(/|-|.|,)(\\d{1,4})");
 
         // Matcher to find and replace the patterns
         Matcher matcher = pattern.matcher(dateStr);
@@ -162,6 +162,9 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         while (matcher.find()) {
             String day = matcher.group(1);
             String separator = matcher.group(2);
+            if (separator == ",") {
+            	separator = ".";
+            }
             String month = matcher.group(3);
             String year = matcher.group(5);
             // Check if the domain ends with a period

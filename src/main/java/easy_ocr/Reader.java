@@ -189,9 +189,20 @@ public class Reader {
 
 	public Prediction[] recognize(Mat inputImage, String image_path) {
 		System.out.println("Current image path: " + image_path);
+		long start = System.nanoTime();
 		//Imgproc.cvtColor(inputImage, inputImage, Imgproc.COLOR_RGB2GRAY); 
 	    BBox[] bboxes = boundingBoxDetector.detectBBoxes(image_path);
+		long detectorEnd = System.nanoTime();
 		Prediction[] ans = recognizerInstance.recognizeFromBBoxes(inputImage, bboxes);
+		long recognizerEnd = System.nanoTime();
+		long timeElapsedDetector = detectorEnd - start;
+		long minutes = (timeElapsedDetector / 1000000000) / 60;
+		long seconds = (timeElapsedDetector / 1000000000) % 60;
+		System.out.printf("Total Time taken for Detector: %d minutes, %d seconds%n", minutes, seconds);
+		long timeElapsedRecognizer = recognizerEnd - detectorEnd;
+		minutes = (timeElapsedRecognizer / 1000000000) / 60;
+		seconds = (timeElapsedRecognizer / 1000000000) % 60;
+		System.out.printf("Total Time taken for Recognizer: %d minutes, %d seconds%n", minutes, seconds);
 		double part_h = inputImage.height() / MAXIMUM_NUMBER_OF_LINES; // This constant is the height each line should have
 	    
 	    return connectWords(ans, part_h);

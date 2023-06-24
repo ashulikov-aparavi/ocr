@@ -17,9 +17,7 @@ import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Size;
-import org.opencv.highgui.HighGui;
 import org.opencv.imgproc.Imgproc;
-import org.tensorflow.ndarray.FloatNdArray;
 
 public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
 	private final int maxLength;
@@ -32,6 +30,7 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
 	private static final double PIXEL_SCORE_THRESHOLD = 0.4;
 	private static final int MAXVAL_THRESHOLD_TYPE = 1;
 	private static final int SIZE_THRESHOLD = 10;
+	private static final int STANDARD_SIZE = 1500;
 	
 	private static final float[] MEANS = {0.485f, 0.456f, 0.406f};
 	private static final float[] VARIANCES = {0.229f, 0.224f, 0.225f};
@@ -48,12 +47,13 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
      * @param arguments the arguments for the translator
      */
     public DetectorTranslator(Map<String, ?> arguments) {
-        maxLength = ArgumentsUtil.intValue(arguments, "maxLength", 1500);
+        maxLength = ArgumentsUtil.intValue(arguments, "maxLength", STANDARD_SIZE);
     }
 
     /** {@inheritDoc} */
     @Override
     public BBox[] processOutput(TranslatorContext ctx, NDList list) {
+		long start = System.nanoTime();
         NDArray prediction = list.get(0);
 
         Mat regionMap = new Mat(height, width, CvType.CV_32FC1);
@@ -64,6 +64,7 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
 				affinityMap.put(i, j, prediction.getFloat(0, i, j, 1));
 			}
 		}
+		long getProcessOutputEnd = System.nanoTime();
 		
 		Mat regionScore = new Mat(height, width, CvType.CV_32FC1);
 		Mat affinityScore = new Mat(height, width, CvType.CV_32FC1);
@@ -171,6 +172,10 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
         }
         BBox[] result = new BBox[boxes.size()];
         result = boxes.toArray(result);
+		long timeElapsedDetector = getProcessOutputEnd - start;
+		long minutes = (timeElapsedDetector / 1000000000) / 60;
+		long seconds = (timeElapsedDetector / 1000000000) % 60;
+		System.out.printf("Total Time taken for processOutput in Detector: %d minutes, %d seconds%n", minutes, seconds);
 	    return result;
     }
 
@@ -187,13 +192,7 @@ public class DetectorTranslator implements NoBatchifyTranslator<Image, BBox[]>{
         img = NDImageUtils.resize(img, hw[1], hw[0]);
         int[] hw32 = resize32(height * scale, width * scale);
         NDArray img32 = manager.zeros(new Shape(hw32[0], hw32[1], 3));
-		for (int i = 0; i < hw[0]; ++i) {
-			for (int j = 0; j < hw[1]; ++j) {
-				img32.set(new NDIndex(i, j, 0), img.getFloat(i, j, 0));
-				img32.set(new NDIndex(i, j, 1), img.getFloat(i, j, 1));
-				img32.set(new NDIndex(i, j, 2), img.getFloat(i, j, 2));
-			}
-		}
+        img32.set(new NDIndex("0:{}, 0:{}, :", hw[0], hw[1]), img);
         height = hw[0] / net_scale;
         width = hw[1] / net_scale;
         img = NDImageUtils.toTensor(img32);

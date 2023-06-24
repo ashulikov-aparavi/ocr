@@ -1,7 +1,5 @@
 package easy_ocr;
 
-//import org.apache.log4j.Logger;
-
 import java.util.concurrent.ConcurrentHashMap;
 import java.nio.file.*;
 import java.io.IOException;
@@ -20,10 +18,11 @@ public class Detector {
 	private static final String modelPath = "models/";
 	
 	public Detector(String detectorType) {
+		ConcurrentHashMap <String, String> translatorInput = new ConcurrentHashMap <String, String>();
 		Criteria<Image, BBox[]> criteria = Criteria.builder()
 				.setTypes(Image.class, BBox[].class)
 		        .optModelPath(Paths.get(modelPath + detectorType))
-		        .optTranslator(new DetectorTranslator(new ConcurrentHashMap<String, String>()))
+		        .optTranslator(new DetectorTranslator(translatorInput))
 		        .optProgress(new ProgressBar()).build();
 
 		try {

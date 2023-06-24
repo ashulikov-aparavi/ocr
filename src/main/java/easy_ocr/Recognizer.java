@@ -2,6 +2,7 @@ package easy_ocr;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.DoubleStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -53,7 +54,7 @@ public class Recognizer {
     static {
     	charSet.put("latin_gen2", " !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ªÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĨĩĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŒœŔŕŘřŚśŞşŠšŤťŨũŪūŮůŲųŸŹźŻżŽžƏƠơƯưȘșȚțə̇ḌḍḶḷṀṁṂṃṄṅṆṇṬṭẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ€");
     }
-	 
+    
     public Recognizer(String modelType) {
     	currentModel = modelType;
     	ConcurrentHashMap <String, String> translatorInput = new ConcurrentHashMap <String, String>();
@@ -88,24 +89,11 @@ public class Recognizer {
 	private Image compute_ratio_and_resize(Mat img, int width,int height,int model_height) {
 	    double ratio = width/1.0/height;
         Mat new_img = new Mat();
-		Image res = null;
 	    if (ratio<1.0) {
 	        ratio = 1.0 / ratio;
 	    }
         Imgproc.resize(img, new_img, new Size((int)(model_height*ratio), model_height), 0, 0, Imgproc.INTER_LANCZOS4);
-        try (NDManager manager = NDManager.newBaseManager()) {
-	        NDArray full = manager.create(new Shape(3, model_height,(int)(model_height*ratio)));
-			for (int i = 0; i < new_img.height(); i++) {
-				for (int j = 0; j < new_img.width(); j++) {
-					double[] pixel = new_img.get(i, j);
-					full.setScalar(new NDIndex(0, i, j), (float) (pixel[0]));
-					full.setScalar(new NDIndex(1, i, j), (float) (pixel[1]));
-					full.setScalar(new NDIndex(2, i, j), (float) (pixel[2]));
-				}
-			}
-			res = ImageFactory.getInstance().fromNDArray(full);
-        }
-	    
+        Image res = OpenCVImageFactory.getInstance().fromImage(new_img);
 	    return res;
 	}
 	
@@ -263,7 +251,6 @@ public class Recognizer {
 	        }
         }
 		ArrayList <RecognizerInput> image_list = new ArrayList<RecognizerInput>();
-
 	    for(int i = 0; i < free_list.size(); ++i) {
 	    	List<Point> box = free_list.get(i);
 	        Mat transformed_img = four_point_transform(image, box);

@@ -44,7 +44,7 @@
 	    <classifier>win-x86_64</classifier>
 	    <scope>runtime</scope>
 	    <version>2.0.0</version>
-	</dependency>
+	</dependency>	
 	
 	<dependency>
 	    <groupId>ai.djl.pytorch</groupId>
