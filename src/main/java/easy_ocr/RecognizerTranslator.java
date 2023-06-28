@@ -229,7 +229,6 @@ public class RecognizerTranslator implements NoBatchifyTranslator<RecognizerInpu
         matcher.appendTail(outputEmail);
         String processedString = outputEmail.toString();
         return processedString;
-
     }
 
     /** {@inheritDoc} */
